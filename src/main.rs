@@ -130,11 +130,11 @@ async fn main() {
     let connection = SqliteConnection::establish("dorian.db").expect("error connecting to db");
     let qr = tags
         .select(name)
-        .load::<Tag>(&connection)
+        .load::<String>(&connection)
         .expect("Error loading tags");
 
     for tag in qr.iter() {
-        println!("{} {}", tag.id, tag.name);
+        println!("{}", tag);
     }
 
     let health = warp::path!("health").map(|| "200 OK");
