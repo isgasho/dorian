@@ -44,28 +44,28 @@ use schema::*;
 
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 struct User {
-    id: u128,
+    id: i32,
     name: String,
 }
 
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 #[table_name = "entries"] // diesel thought this was "entrys", funny
 struct Entry {
-    id: u128,
+    id: i32,
     tags: Vec<String>,
     uploader: String, // User.name
 }
 
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 struct Tag {
-    id: u128,
+    id: i32,
     name: String,
 }
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 struct Taglink {
-    id: u128,
-    tag_id: u128,
-    entry_id: u128,
+    id: i32,
+    tag_id: i32,
+    entry_id: i32,
 }
 
 enum StorageError {
@@ -89,13 +89,16 @@ async fn main() {
 
     let connection = SqliteConnection::establish("dorian.db").expect("error connecting to db");
 
-    let ts = tags
-        .select(name)
-        .load::<String>(&connection)
+    let (i, n): (Vec<_>, Vec<_>) = tags
+        .select((id, name))
+        .load::<(i32, String)>(&connection)
         .expect("Error loading tags")
-        .join(" ");
+        .iter()
+        .cloned()
+        .unzip();
 
-    let t = warp::path!("tags").map(move || format!("{}", ts));
+    println!("{}", n.join(" "));
 
+    let t = warp::path!("tags").map(|| "");
     warp::serve(t).run(([0, 0, 0, 0], 3030)).await;
 }
