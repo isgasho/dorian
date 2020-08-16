@@ -30,7 +30,7 @@ mod schema {
     diesel::table! {
         tags {
             id -> Integer,
-            tag -> Text,
+            name -> Text,
         }
     }
     diesel::table! {
@@ -46,7 +46,7 @@ use schema::*;
 
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 struct User {
-    id: Uuid,
+    id: u128,
     name: String,
 }
 
@@ -54,7 +54,7 @@ impl User {
     fn new(n: String) -> User {
         User {
             name: n,
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().to_u128_le(),
         }
     }
 }
@@ -62,7 +62,7 @@ impl User {
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 #[table_name = "entries"] // diesel thought this was "entrys", funny
 struct Entry {
-    id: Uuid,
+    id: u128,
     tags: Vec<String>,
     uploader: String, // User.name
 }
@@ -70,7 +70,7 @@ struct Entry {
 impl Entry {
     fn new(u: User, ts: Vec<String>) -> Entry {
         Entry {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().to_u128_le(),
             uploader: u.name,
             tags: ts,
         }
@@ -79,29 +79,29 @@ impl Entry {
 
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 struct Tag {
-    id: Uuid,
+    id: u128,
     name: String,
 }
 
 impl Tag {
     fn new(n: String) -> Tag {
         Tag {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().to_u128_le(),
             name: n,
         }
     }
 }
 #[derive(Serialize, Deserialize, Identifiable, Queryable)]
 struct Taglink {
-    id: Uuid,
-    tag_id: Uuid,
-    entry_id: Uuid,
+    id: u128,
+    tag_id: u128,
+    entry_id: u128,
 }
 
 impl Taglink {
     fn new(tag: Tag, entry: Entry) -> Taglink {
         Taglink {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().to_u128_le(),
             tag_id: tag.id,
             entry_id: entry.id,
         }
@@ -125,6 +125,18 @@ trait Store {
 
 #[tokio::main]
 async fn main() {
+    use schema::tags::dsl::*;
+
+    let connection = SqliteConnection::establish("dorian.db").expect("error connecting to db");
+    let qr = tags
+        .select(name)
+        .load::<Tag>(&connection)
+        .expect("Error loading tags");
+
+    for tag in qr.iter() {
+        println!("{} {}", tag.id, tag.name);
+    }
+
     let health = warp::path!("health").map(|| "200 OK");
     warp::serve(health).run(([0, 0, 0, 0], 3030)).await;
 }
