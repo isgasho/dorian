@@ -1,104 +1,179 @@
-use std::path::Path;
-
-extern crate serde;
-use serde::{Deserialize, Serialize};
-
-extern crate warp;
-use warp::Filter;
-
+#[feature(proc_macro_hygiene, decl_macro)]
 #[macro_use]
 extern crate diesel;
 use diesel::prelude::*;
 use diesel::*;
 
+extern crate serde;
+use serde::{Deserialize, Serialize};
+use serde_json::*;
+
+use std::error::Error;
+use std::path::Path;
+
 mod schema {
-    diesel::table! {
-        users {
+    table! {
+        entries (id) {
             id -> Integer,
-            name -> Text,
-        }
-    }
-    diesel::table! {
-        entries {
-            id -> Integer,
-            title -> Text,
+            tags -> Text,
             uploader -> Text,
         }
     }
-    diesel::table! {
-        tags {
-            id -> Integer,
-            name -> Text,
-        }
-    }
-    diesel::table! {
-        taglinks {
+
+    table! {
+        taglinks (id) {
             id -> Integer,
             tag_id -> Integer,
             entry_id -> Integer,
         }
     }
+
+    table! {
+        tags (id) {
+            id -> Integer,
+            name -> Text,
+        }
+    }
+
+    table! {
+        users (id) {
+            id -> Integer,
+            name -> Text,
+        }
+    }
+
+    allow_tables_to_appear_in_same_query!(entries, taglinks, tags, users);
 }
 
-use schema::*;
+mod db {
+    extern crate serde;
+    use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Identifiable, Queryable)]
-struct User {
-    id: i32,
-    name: String,
+    use super::schema::*;
+
+    //
+    // These Entity structs represent what actually exists in the database.
+    //
+
+    #[derive(Serialize, Deserialize, Identifiable, Queryable)]
+    #[table_name = "users"]
+    pub struct UserEntity {
+        id: i32,
+        name: String,
+    }
+
+    #[derive(Serialize, Deserialize, Identifiable, Queryable)]
+    #[table_name = "entries"]
+    pub struct EntryEntity {
+        id: i32,
+        tags: Vec<String>,
+        uploader: String, // User.name
+    }
+
+    #[derive(Serialize, Deserialize, Identifiable, Queryable)]
+    #[table_name = "tags"]
+    pub struct TagEntity {
+        id: i32,
+        name: String,
+    }
+
+    #[derive(Serialize, Deserialize, Identifiable, Queryable)]
+    #[table_name = "taglinks"]
+    pub struct TaglinkEntity {
+        id: i32,
+        tag_id: i32,
+        entry_id: i32,
+    }
+
+    //
+    // The structs below represent the structs that will be dealt with in rust code.
+    //
+
+    #[derive(Insertable)]
+    pub struct User {
+        name: String,
+    }
+
+    #[derive(Insertable)]
+    #[table_name = "entries"] // diesel thought this was "entrys", funny
+    pub struct Entry {
+        uploader: String, // User.name
+    }
+
+    #[derive(Insertable)]
+    pub struct Tag {
+        name: String,
+    }
+
+    #[derive(Insertable)]
+    pub struct Taglink {
+        tag_id: i32,
+        entry_id: i32,
+    }
 }
 
-#[derive(Serialize, Deserialize, Identifiable, Queryable)]
-#[table_name = "entries"] // diesel thought this was "entrys", funny
-struct Entry {
-    id: i32,
-    tags: Vec<String>,
-    uploader: String, // User.name
-}
+use std::result::Result;
 
-#[derive(Serialize, Deserialize, Identifiable, Queryable)]
-struct Tag {
-    id: i32,
-    name: String,
-}
-#[derive(Serialize, Deserialize, Identifiable, Queryable)]
-struct Taglink {
-    id: i32,
-    tag_id: i32,
-    entry_id: i32,
-}
-
-enum StorageError {
-    FileNotFound,
-    PermissionDenied,
-    NotEnoughSpace,
-}
-
-// we're gonna use this to abstract the storage backend away. eventually other types
-// of storage might be used and this is not super complex so this is fine
-trait Store {
-    fn save(&mut self) -> Result<u8, StorageError>;
-    fn load<P>(path: P) -> Result<Vec<u8>, StorageError>
-    where
-        P: AsRef<Path>;
-}
-
-#[tokio::main]
-async fn main() {
+fn get_tags(conn: &SqliteConnection) -> Result<Vec<String>, Box<dyn Error>> {
     use schema::tags::dsl::*;
 
-    let connection = SqliteConnection::establish("dorian.db").expect("error connecting to db");
+    let ts = tags.select(name).load::<String>(conn)?;
 
-    let (i, n): (Vec<_>, Vec<_>) = tags
-        .select((id, name))
-        .load::<(i32, String)>(&connection)
-        .expect("Error loading tags")
+    Ok(ts)
+}
+
+fn get_entries(conn: &SqliteConnection) -> Result<(Vec<i32>, Vec<String>), Box<dyn Error>> {
+    use schema::entries::dsl::*;
+
+    let (ids, us): (Vec<i32>, Vec<String>) = entries
+        .select((id, uploader))
+        .load::<(i32, String)>(conn)?
         .iter()
         .cloned()
         .unzip();
 
-    println!("{}", n.join(" "));
+    Ok((ids, us))
+}
 
-    let t = warp::path!("tags").map(|| "");
-    warp::serve(t).run(([0, 0, 0, 0], 3030)).await;
+fn get_entry_tags(conn: &SqliteConnection, eid: i32)
+/* -> Result<(String, Vec<String>), Box<dyn Error>> */
+{
+    use schema::taglinks::dsl::*;
+    use schema::tags::dsl::*;
+
+    /* BROKEN
+        // search the tag_ids in taglinks for eid (the id of the entry we're looking up the tags for)
+        let ts: Vec<String> = taglinks
+            .filter(entry_id.eq(eid))
+            .select(tag_id)
+            .load::<i32>(conn)
+            .expect("Could not load taglinks from db")
+            .iter()
+            .map(|tid|
+        // search tags for the names of the tags associated with each tag_id
+        tags.filter(tag_id.eq(tid)).select(name).load::<String>(conn).expect("Could not load tags from db"))
+    BROKEN */
+}
+
+fn new_tag(conn: &SqliteConnection) /* -> Result<&'static str, &'static str> */
+{
+    /*
+    let i = 0;
+    match i {
+        0 => Err("Error"),
+        _ => Ok("OK"),
+    }
+    */
+}
+
+fn main() {
+    use db::*;
+    use schema::tags::dsl::*;
+
+    let conn = SqliteConnection::establish("dorian.db").expect("error connecting to db");
+
+    /* Broken
+    let serialized = json!({ "tags": tags_in_db });
+    println!("{}", serialized);
+    */
 }
