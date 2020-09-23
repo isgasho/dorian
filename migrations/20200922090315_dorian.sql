@@ -5,7 +5,6 @@ CREATE TABLE users (
 
 CREATE TABLE entries (
 	id       SERIAL PRIMARY KEY,
-	title    VARCHAR NOT NULL,
 	uploader VARCHAR NOT NULL
 );
 
