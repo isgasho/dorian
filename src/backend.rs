@@ -7,7 +7,7 @@ use sqlx;
 use sqlx::postgres::PgPool;
 use sqlx::Done;
 
-mod db {
+pub mod db {
     extern crate serde;
     use serde::{Deserialize, Serialize};
 

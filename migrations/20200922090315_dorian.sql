@@ -19,5 +19,6 @@ CREATE TABLE tagmap (
 	entry_id INTEGER NOT NULL,
 
 	FOREIGN KEY(tag_id) REFERENCES tags(id),
-	FOREIGN KEY(entry_id) REFERENCES entries(id)
+	FOREIGN KEY(entry_id) REFERENCES entries(id),
+	UNIQUE(tag_id,entry_id) -- to make sure there are no duplicate rows
 );
